@@ -5,16 +5,13 @@
 extern crate cortex_m;
 extern crate cortex_m_rt;
 extern crate panic_halt;
-extern crate cast;
-use nb::block;
+//use nb::block;
 
 #[macro_use()]
 use cortex_m_rt::entry;
-use embedded_hal::digital::v2::OutputPin;
-//use embedded_hal::PwmPin;
+use embedded_hal::{digital::v2::OutputPin, PwmPin};
 #[macro_use(stm32f1xx_hal::gpio)]
-use stm32f1xx_hal::{adc, pwm::*, pac, prelude::*, timer::Timer, delay::Delay};
-// use cast::u16;
+use stm32f1xx_hal::{adc::Adc, pwm::*, pac, prelude::*, timer::Timer, delay::Delay};
 
 #[entry]
 
@@ -30,13 +27,13 @@ fn main() -> ! {
 
     let mut gpioa = device_peripherals.GPIOA.split(&mut rcc.apb2);
     //let mut gpioc = device_peripherals.GPIOC.split(&mut rcc.apb2);
-    
+
     //let mut led = gpioc.pc13.into_push_pull_output(&mut gpioc.crh);
     //let measurement: u16 = adc1.read(&mut measurement_pin).unwrap();
 
     let mut measurement_pin = MeasurementPin {
-        adc: &mut adc::Adc::adc1(device_peripherals.ADC1, &mut rcc.apb2, clocks),
-        pin: &mut gpioa.pa5.into_analog(&mut gpioa.crl)
+        adc: &mut Adc::adc1(device_peripherals.ADC1, &mut rcc.apb2, clocks),
+        pin: &mut gpioa.pa5.into_analog(&mut gpioa.crl),
     };
 
     let pwm_pins = (
@@ -45,14 +42,11 @@ fn main() -> ! {
         gpioa.pa2.into_alternate_push_pull(&mut gpioa.crl),
         gpioa.pa3.into_alternate_push_pull(&mut gpioa.crl),
     );
-    
-    let (mut pwm_channel1, mut pwm_channel2, _, _) = device_peripherals.TIM2.pwm(
-        pwm_pins,
-        &mut afio.mapr,
-        10.khz(),
-        clocks,
-        &mut rcc.apb1
-    );
+
+    let (mut pwm_channel1, mut pwm_channel2, _, _) =
+        device_peripherals
+            .TIM2
+            .pwm(pwm_pins, &mut afio.mapr, 10.khz(), clocks, &mut rcc.apb1);
 
     //c0.set_duty(c0.get_max_duty() / 2);
     //pulse_voltmeter(&mut c0, 51);
@@ -62,20 +56,19 @@ fn main() -> ! {
     // alternative timer:
     // let mut timer = Timer::syst(core_peripherals.SYST, 2.hz(), clocks);
     // block!(timer.wait());
-    
+
     //pulse_voltmeter(&mut c0, 51);
 
     let mut pwm_pin = FadingPin {
-        fill: 255, 
+        fill: 255,
         incrementing: false,
-        pin: &mut pwm_channel1
+        pin: &mut pwm_channel1,
     };
     let mut voltmeter_pin = VoltmeterPin {
-        pin: &mut pwm_channel2
+        pin: &mut pwm_channel2,
     };
     loop {
         // flash_led(&mut led, &mut delay, 500);
-        // TODO: pwm fading in real time
         measurement_pin.read();
         delay_provider.delay_ms(1 as u16);
         pwm_pin.fade();
@@ -83,7 +76,10 @@ fn main() -> ! {
     }
 }
 
-fn flash_led<T>(pin: &mut T, delay: &mut Delay, amount: u16) where T: OutputPin {
+fn flash_led<T>(pin: &mut T, delay: &mut Delay, amount: u16)
+where
+    T: OutputPin,
+{
     pin.set_high();
     delay.delay_ms(amount);
     pin.set_low();
@@ -93,7 +89,7 @@ fn flash_led<T>(pin: &mut T, delay: &mut Delay, amount: u16) where T: OutputPin 
 struct FadingPin<'a> {
     fill: u16,
     incrementing: bool,
-    pin: &'a mut dyn embedded_hal::PwmPin<Duty = u16>,
+    pin: &'a mut dyn PwmPin<Duty = u16>,
 }
 
 impl FadingPin<'_> {
@@ -113,13 +109,16 @@ impl FadingPin<'_> {
     }
 }
 
-fn set_pwm<T: ?Sized>(pin: &mut T, duty: u16, starting_point: u16) where T: embedded_hal::PwmPin<Duty = u16> {
+fn set_pwm<T: ?Sized>(pin: &mut T, duty: u16, starting_point: u16)
+where
+    T: PwmPin<Duty = u16>,
+{
     let fill = map(duty, 0, 4095, starting_point, 0);
     pin.set_duty(fill);
 }
 
 struct VoltmeterPin<'a> {
-    pin: &'a mut dyn embedded_hal::PwmPin<Duty = u16>,
+    pin: &'a mut dyn PwmPin<Duty = u16>,
 }
 
 impl VoltmeterPin<'_> {
@@ -131,8 +130,9 @@ impl VoltmeterPin<'_> {
 }
 
 struct MeasurementPin<'a> {
-    adc: &'a mut stm32f1xx_hal::adc::Adc<pac::ADC1>,
-    pin: &'a mut stm32f1xx_hal::gpio::gpioa::PA5<stm32f1xx_hal::gpio::Analog>
+    adc: &'a mut Adc<pac::ADC1>,
+    // TODO: find a way to make this more generic:
+    pin: &'a mut stm32f1xx_hal::gpio::gpioa::PA5<stm32f1xx_hal::gpio::Analog>,
 }
 
 impl MeasurementPin<'_> {
@@ -149,6 +149,14 @@ impl MeasurementPin<'_> {
 //     pin.set_duty(output_range_min * (input_value - input_range_min) / (input_range_max - input_range_min) + output_range_min);
 // }
 
-fn map(value: u16, input_range_min: u16, input_range_max: u16, output_range_min: u16, output_range_max: u16) -> u16 {
-    (output_range_max - output_range_min) * (value - input_range_min) / (input_range_max - input_range_min) + output_range_min
+fn map(
+    value: u16,
+    input_range_min: u16,
+    input_range_max: u16,
+    output_range_min: u16,
+    output_range_max: u16,
+) -> u16 {
+    (output_range_max - output_range_min) * (value - input_range_min)
+        / (input_range_max - input_range_min)
+        + output_range_min
 }
