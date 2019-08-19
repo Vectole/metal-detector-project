@@ -1,0 +1,36 @@
+[package]
+name = "stm32-project"
+version = "0.1.0"
+authors = ["Vectole <vectole@protonmail.com>"]
+edition = "2018"
+
+[profile.release]
+opt-level = 'z'
+lto = true
+debug = true
+features = "no_std"
+# panic = "abort"
+
+# [dependencies]
+[dependencies.stm32f1xx-hal]
+version = "0.4"
+features = ["stm32f103", "rt"]
+
+[dependencies.panic-halt]
+version = "0.2.0"
+
+[dependencies.nb]
+version = "0.1.2"
+
+[dependencies.cortex-m-rt]
+version = "0.6.10"
+
+[dependencies.cortex-m]
+version = "0.6.0"
+
+[dependencies.embedded-hal]
+version = "0.2.3"
+
+[dependencies.cast]
+version = "0.2.2"
+default-features = false
