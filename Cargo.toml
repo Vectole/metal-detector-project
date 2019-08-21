@@ -30,3 +30,7 @@ version = "0.6.0"
 
 [dependencies.embedded-hal]
 version = "0.2.3"
+
+[dependencies.void]
+default-features = false
+version = "1.0.2"

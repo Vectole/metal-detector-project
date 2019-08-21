@@ -2,16 +2,15 @@
 #![no_main]
 #![allow(unused_must_use)]
 
-extern crate cortex_m;
-extern crate cortex_m_rt;
-extern crate panic_halt;
-//use nb::block;
+/// Microcontroller Datasheet:
+/// https://www.st.com/resource/en/datasheet/stm32f103c8.pdf
 
 #[macro_use()]
 use cortex_m_rt::entry;
 use embedded_hal::{digital::v2::OutputPin, PwmPin};
 #[macro_use(stm32f1xx_hal::gpio)]
-use stm32f1xx_hal::{adc::Adc, pwm::*, pac, prelude::*, timer::Timer, delay::Delay};
+use stm32f1xx_hal::{adc::Adc, pac, prelude::*, delay::Delay};
+use void::Void;
 
 #[entry]
 
@@ -26,86 +25,68 @@ fn main() -> ! {
     let mut delay_provider = Delay::new(core_peripherals.SYST, clocks);
 
     let mut gpioa = device_peripherals.GPIOA.split(&mut rcc.apb2);
+    let mut gpiob = device_peripherals.GPIOB.split(&mut rcc.apb2);
     //let mut gpioc = device_peripherals.GPIOC.split(&mut rcc.apb2);
 
-    //let mut led = gpioc.pc13.into_push_pull_output(&mut gpioc.crh);
-    //let measurement: u16 = adc1.read(&mut measurement_pin).unwrap();
-
-    let mut measurement_pin = MeasurementPin {
+    let mut measurement_taker = MeasurementTaker {
         adc: &mut Adc::adc1(device_peripherals.ADC1, &mut rcc.apb2, clocks),
         pin: &mut gpioa.pa5.into_analog(&mut gpioa.crl),
+        output: 0,
     };
 
-    let pwm_pins = (
-        gpioa.pa0.into_alternate_push_pull(&mut gpioa.crl),
-        gpioa.pa1.into_alternate_push_pull(&mut gpioa.crl),
-        gpioa.pa2.into_alternate_push_pull(&mut gpioa.crl),
-        gpioa.pa3.into_alternate_push_pull(&mut gpioa.crl),
+    let pwm_pins_1 = (
+        gpiob.pb6.into_alternate_push_pull(&mut gpiob.crl),
+        gpiob.pb7.into_alternate_push_pull(&mut gpiob.crl),
+        gpiob.pb8.into_alternate_push_pull(&mut gpiob.crh),
+        gpiob.pb9.into_alternate_push_pull(&mut gpiob.crh),
     );
 
-    let (mut pwm_channel1, mut pwm_channel2, _, _) =
+    // let pwm_pins_2 = (
+    //     gpioa.pa8.into_alternate_push_pull(&mut gpioa.crh),
+    // );
+
+    let (_, _, mut pwm_channel3, mut pwm_channel4) =
         device_peripherals
-            .TIM2
-            .pwm(pwm_pins, &mut afio.mapr, 10.khz(), clocks, &mut rcc.apb1);
+            .TIM4
+            .pwm(pwm_pins_1, &mut afio.mapr, 10.khz(), clocks, &mut rcc.apb1);
 
-    //c0.set_duty(c0.get_max_duty() / 2);
-    //pulse_voltmeter(&mut c0, 51);
-    pwm_channel1.enable();
-    pwm_channel2.enable();
-    //c0.set_duty(c0.get_max_duty() / 2);
-    // alternative timer:
-    // let mut timer = Timer::syst(core_peripherals.SYST, 2.hz(), clocks);
-    // block!(timer.wait());
+    pwm_channel3.enable();
+    pwm_channel4.enable();
 
-    //pulse_voltmeter(&mut c0, 51);
-
-    let mut pwm_pin = FadingPin {
-        fill: 255,
-        incrementing: false,
-        pin: &mut pwm_channel1,
+    let mut voltmeter_controller = VoltmeterController {
+        pin: &mut pwm_channel3,
     };
-    let mut voltmeter_pin = VoltmeterPin {
-        pin: &mut pwm_channel2,
+    let mut speaker_controller = SpeakerController {
+        pin: &mut pwm_channel4,
+    };
+    // TODO: set pin PA8 as PWM
+    // let mut bar_graph_controller = BarGraphController {
+    //     pin: &mut pwm_channel3,
+    // };
+    let mut inductor_controller = InductorController {
+        pin: &mut gpiob.pb1.into_push_pull_output(&mut gpiob.crl),
+    };
+    let mut display_controller = DisplayController {
+        eight_segment_display_pin1: &mut gpioa.pa6.into_push_pull_output(&mut gpioa.crl),
+        eight_segment_display_pin2: &mut gpioa.pa7.into_push_pull_output(&mut gpioa.crl),
+        eight_segment_display_pin3: &mut gpiob.pb0.into_push_pull_output(&mut gpiob.crl),
+        shift_register_data_pin: &mut gpioa.pa0.into_push_pull_output(&mut gpioa.crl),
+        shift_register_data_clock_pin: &mut gpioa.pa3.into_push_pull_output(&mut gpioa.crl),
+        shift_register_storage_clock_pin: &mut gpioa.pa2.into_push_pull_output(&mut gpioa.crl),
+        current_display: 0,
+        current_tick: 0,
+        current_number: 0,
+        digit_bytes: &digit_bytes,
     };
     loop {
-        // flash_led(&mut led, &mut delay, 500);
-        measurement_pin.read();
-        delay_provider.delay_ms(1 as u16);
-        pwm_pin.fade();
-        voltmeter_pin.pulse(voltmeter_pin.pin.get_max_duty() / 3);
-    }
-}
+        inductor_controller.pulse_for(&mut delay_provider, 700);
+        measurement_taker.read_after_waiting(&mut delay_provider, 40);
 
-fn flash_led<T>(pin: &mut T, delay: &mut Delay, amount: u16)
-where
-    T: OutputPin,
-{
-    pin.set_high();
-    delay.delay_ms(amount);
-    pin.set_low();
-    delay.delay_ms(amount);
-}
-
-struct FadingPin<'a> {
-    fill: u16,
-    incrementing: bool,
-    pin: &'a mut dyn PwmPin<Duty = u16>,
-}
-
-impl FadingPin<'_> {
-    fn fade(&mut self) {
-        let max_duty = self.pin.get_max_duty();
-        if self.fill == max_duty {
-            self.incrementing = false;
-        } else if self.fill == 1 {
-            self.incrementing = true;
-        }
-        if self.incrementing {
-            self.fill += 1;
-        } else {
-            self.fill -= 1;
-        }
-        self.pin.set_duty(max_duty - self.fill);
+        voltmeter_controller.pulse(measurement_taker.output);
+        display_controller.display_number(&mut delay_provider, measurement_taker.output);
+        // speaker_controller.pulse(measurement_taker.output);
+        // bar_graph_controller.pulse(measurement_taker.output);
+        delay_provider.delay_us(6666 as u32);
     }
 }
 
@@ -113,41 +94,174 @@ fn set_pwm<T: ?Sized>(pin: &mut T, duty: u16, starting_point: u16)
 where
     T: PwmPin<Duty = u16>,
 {
-    let fill = map(duty, 0, 4095, starting_point, 0);
+    let fill = map(duty, 0, 4095, 0, starting_point, false);
     pin.set_duty(fill);
 }
 
-struct VoltmeterPin<'a> {
+struct VoltmeterController<'a> {
     pin: &'a mut dyn PwmPin<Duty = u16>,
 }
 
-impl VoltmeterPin<'_> {
+impl VoltmeterController<'_> {
     fn pulse(&mut self, duty: u16) {
-        //set_pwm(self.pin, duty, 255);
-        self.pin.set_duty(duty);
-        set_pwm(self.pin, duty, 255);
+        //self.pin.set_duty(duty);
+        set_pwm(self.pin, duty, 800);
     }
 }
 
-struct MeasurementPin<'a> {
+struct SpeakerController<'a> {
+    pin: &'a mut dyn PwmPin<Duty = u16>,
+}
+
+impl SpeakerController<'_> {
+    fn pulse(&mut self, duty: u16) {
+        //self.pin.set_duty(duty);
+        set_pwm(self.pin, duty, 160);
+    }
+}
+
+struct BarGraphController<'a> {
+    pin: &'a mut dyn PwmPin<Duty = u16>,
+}
+
+impl BarGraphController<'_> {
+    fn pulse(&mut self, duty: u16) {
+        //self.pin.set_duty(duty);
+        set_pwm(self.pin, duty, 280);
+    }
+}
+
+struct InductorController<'a> {
+    pin: &'a mut dyn OutputPin<Error = Void>,
+}
+
+impl InductorController<'_> {
+    fn pulse_for(&mut self, delay_provider: &mut Delay, pulse_width: u16) {
+        self.pin.set_high();
+        delay_provider.delay_us(pulse_width);
+        self.pin.set_low();
+    }
+}
+
+struct MeasurementTaker<'a> {
     adc: &'a mut Adc<pac::ADC1>,
     // TODO: find a way to make this more generic:
     pin: &'a mut stm32f1xx_hal::gpio::gpioa::PA5<stm32f1xx_hal::gpio::Analog>,
+    output: u16,
 }
 
-impl MeasurementPin<'_> {
-    fn read(&mut self) -> u16 {
-        self.adc.read(self.pin).unwrap()
+impl MeasurementTaker<'_> {
+    fn read_after_waiting(&mut self, delay_provider: &mut Delay, wait_time: u16) {
+        delay_provider.delay_us(wait_time);
+        let mut output: u16 = self.adc.read(self.pin).unwrap();
+        output = map(output, 2036, 2654, 0, 4095, false);
+        self.output = output;
     }
 }
 
-// fn pulse_voltmeter(pin: &mut Pwm<TIM2, C1>, input_value: u16) {
-//     //let voltmeter_value: u16 = map(input_value, 0, 4095, pin.get_max_duty(), 0);
-//     let input_range_min = 0;
-//     let input_range_max = 4095;
-//     let output_range_min = pin.get_max_duty();
-//     pin.set_duty(output_range_min * (input_value - input_range_min) / (input_range_max - input_range_min) + output_range_min);
-// }
+const digit_bytes: [u8; 10] = [
+    0b10111110, //0
+    0b10000010, //1
+    0b11101100, //2
+    0b11100110, //3
+    0b11010010, //4
+    0b01110110, //5
+    0b01111110, //6
+    0b10100010, //7
+    0b11111110, //8
+    0b11110110, //9
+];
+
+struct DisplayController<'a> {
+    eight_segment_display_pin1: &'a mut dyn OutputPin<Error = Void>,
+    eight_segment_display_pin2: &'a mut dyn OutputPin<Error = Void>,
+    eight_segment_display_pin3: &'a mut dyn OutputPin<Error = Void>,
+    shift_register_data_pin: &'a mut dyn OutputPin<Error = Void>,
+    shift_register_data_clock_pin: &'a mut dyn OutputPin<Error = Void>,
+    shift_register_storage_clock_pin: &'a mut dyn OutputPin<Error = Void>,
+    current_display: u8,
+    current_tick: u8,
+    current_number: u16,
+    digit_bytes: &'static [u8; 10],
+}
+
+// TODO: figure out why it's flickering
+impl DisplayController<'_> {
+    fn display_number(&mut self, delay_provider: &mut Delay, input_value: u16) {
+        if self.current_tick == 0 {
+            self.current_number = map(input_value, 0, 4095, 0, 999, false);
+            self.current_tick = 50;
+        } else {
+            self.current_tick -= 1;
+        }
+        let mut displayed_digit: u16 = 0;
+        match self.current_display {
+            0 => {
+                self.eight_segment_display_pin1.set_high();
+                self.eight_segment_display_pin2.set_low();
+                self.eight_segment_display_pin3.set_low();
+                displayed_digit = self.current_number / 100;
+                self.current_display += 1;
+            }
+            1 => {
+                self.eight_segment_display_pin1.set_low();
+                self.eight_segment_display_pin2.set_high();
+                self.eight_segment_display_pin3.set_low();
+                displayed_digit = (self.current_number / 10) % 10;
+                self.current_display += 1;
+            }
+            2 => {
+                self.eight_segment_display_pin1.set_low();
+                self.eight_segment_display_pin2.set_low();
+                self.eight_segment_display_pin3.set_high();
+                displayed_digit = self.current_number % 10;
+                self.current_display = 0;
+            }
+            _ => {}
+        }
+        delay_provider.delay_us(1 as u8);
+        for i in 0..8 {
+            digital_write(
+                self.shift_register_data_pin,
+                WriteState::Numeric(!self.digit_bytes[displayed_digit as usize] >> i & 0b0000_0001),
+            );
+            self.shift_register_data_clock_pin.set_high();
+            delay_provider.delay_us(1 as u8);
+            self.shift_register_data_clock_pin.set_low();
+        }
+        delay_provider.delay_us(1 as u8);
+        self.shift_register_storage_clock_pin.set_high();
+        delay_provider.delay_us(1 as u8);
+        self.shift_register_storage_clock_pin.set_low();
+    }
+}
+
+enum WriteState {
+    HIGH,
+    LOW,
+    Numeric(u8),
+}
+
+fn digital_write<T: ?Sized>(output_pin: &mut T, state: WriteState)
+where
+    T: OutputPin<Error = Void>,
+{
+    match state {
+        WriteState::HIGH => {
+            output_pin.set_high();
+        }
+        WriteState::LOW => {
+            output_pin.set_low();
+        }
+        WriteState::Numeric(value) => {
+            if value == 0 {
+                output_pin.set_low();
+            } else {
+                output_pin.set_high();
+            }
+        }
+    }
+}
 
 fn map(
     value: u16,
@@ -155,8 +269,21 @@ fn map(
     input_range_max: u16,
     output_range_min: u16,
     output_range_max: u16,
+    reverse: bool,
 ) -> u16 {
-    (output_range_max - output_range_min) * (value - input_range_min)
-        / (input_range_max - input_range_min)
-        + output_range_min
+    let mut buffer: u32 = 0;
+    if value >= input_range_max {
+        buffer = output_range_max as u32;
+    } else if value <= input_range_min {
+        buffer = output_range_min as u32;
+    } else {
+        buffer = (output_range_max - output_range_min) as u32 * (value - input_range_min) as u32
+            / (input_range_max - input_range_min) as u32
+            + output_range_min as u32;
+    }
+    if reverse {
+        output_range_max - buffer as u16
+    } else {
+        buffer as u16
+    }
 }
