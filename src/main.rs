@@ -41,26 +41,30 @@ fn main() -> ! {
         gpiob.pb9.into_alternate_push_pull(&mut gpiob.crh),
     );
 
-    let (_, _, mut pwm_channel3, mut pwm_channel4) =
+    let (mut pwm_channel1, _, mut pwm_channel3, mut pwm_channel4) =
         device_peripherals
             .TIM4
-            .pwm(pwm_pins_1, &mut afio.mapr, 10.khz(), clocks, &mut rcc.apb1);
+            .pwm(pwm_pins_1, &mut afio.mapr, 1.khz(), clocks, &mut rcc.apb1);
 
+    pwm_channel1.enable();
     pwm_channel3.enable();
     pwm_channel4.enable();
 
-    let mut voltmeter_controller = VoltmeterController {
+    // TODO: find the values for the outputs
+    let mut bar_graph_controller = ModulatedOutput {
+        pin: &mut pwm_channel1,
+        minimum_value: 1500,
+    };
+
+    let mut voltmeter_controller = ModulatedOutput {
         pin: &mut pwm_channel3,
+        minimum_value: 3000,
     };
 
-    let mut speaker_controller = SpeakerController {
+    let mut speaker_controller = ModulatedOutput {
         pin: &mut pwm_channel4,
+        minimum_value: 160,
     };
-
-    // TODO: set pin PA8 as PWM
-    // let mut bar_graph_controller = BarGraphController {
-    //     pin: &mut pwm_channel3,
-    // };
 
     let mut inductor_controller = InductorController {
         pin: &mut gpiob.pb1.into_push_pull_output(&mut gpiob.crl),
@@ -88,8 +92,8 @@ fn main() -> ! {
 
         voltmeter_controller.pulse(measurement_taker.output);
         display_controller.display_number(measurement_taker.output);
-        // speaker_controller.pulse(measurement_taker.output);
-        // bar_graph_controller.pulse(measurement_taker.output);
+        speaker_controller.pulse(measurement_taker.output);
+        bar_graph_controller.pulse(measurement_taker.output);
         delay_provider.delay_us(6666 as u32);
     }
 }
@@ -102,33 +106,14 @@ where
     pin.set_duty(fill);
 }
 
-struct VoltmeterController<'a> {
+struct ModulatedOutput<'a> {
     pin: &'a mut dyn PwmPin<Duty = u16>,
+    minimum_value: u16,
 }
 
-impl VoltmeterController<'_> {
+impl ModulatedOutput<'_> {
     fn pulse(&mut self, duty: u16) {
-        set_pwm(self.pin, duty, 800);
-    }
-}
-
-struct SpeakerController<'a> {
-    pin: &'a mut dyn PwmPin<Duty = u16>,
-}
-
-impl SpeakerController<'_> {
-    fn pulse(&mut self, duty: u16) {
-        set_pwm(self.pin, duty, 160);
-    }
-}
-
-struct BarGraphController<'a> {
-    pin: &'a mut dyn PwmPin<Duty = u16>,
-}
-
-impl BarGraphController<'_> {
-    fn pulse(&mut self, duty: u16) {
-        set_pwm(self.pin, duty, 280);
+        set_pwm(self.pin, duty, self.minimum_value);
     }
 }
 
@@ -232,7 +217,7 @@ impl DisplayController<'_> {
             }
             _ => {}
         }
-        
+
         for i in 0..8 {
             digital_write(
                 self.shift_register_data_pin,
