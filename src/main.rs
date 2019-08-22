@@ -32,7 +32,7 @@ fn main() -> ! {
         pin: &mut gpioa.pa5.into_analog(&mut gpioa.crl),
         output: Measurement {
             data: MeasurementData {
-                values: [0; 15],
+                samples: [0; 15],
                 value: 0,
                 current_index: 0,
             },
@@ -151,7 +151,7 @@ impl InductorController<'_> {
 
 /// Contains the measurement samples and the calculated output value (average) of the sampels.
 struct MeasurementData {
-    values: [u16; 15],
+    samples: [u16; 15],
     value: u16,
     current_index: usize,
 }
@@ -159,11 +159,11 @@ struct MeasurementData {
 impl MeasurementData {
     /// Reads and adds a sample to internal array, calculates average value.
     fn update(&mut self, input: u16) {
-        self.values[self.current_index] = input;
-        self.value = self.values.iter().sum::<u16>() / self.values.len() as u16;
+        self.samples[self.current_index] = input;
+        self.value = self.samples.iter().sum::<u16>() / self.samples.len() as u16;
 
         self.current_index += 1;
-        if self.current_index == self.values.len() {
+        if self.current_index == self.samples.len() {
             self.current_index = 0;
         }
     }
