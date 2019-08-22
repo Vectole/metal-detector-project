@@ -5,13 +5,14 @@
 /// Microcontroller Datasheet:
 /// https://www.st.com/resource/en/datasheet/stm32f103c8.pdf
 extern crate panic_halt;
-#[macro_use()]
-use cortex_m_rt::entry;
-#[macro_use(stm32f1xx_hal::gpio)]
-use stm32f1xx_hal::{adc::Adc, pac, prelude::*, delay::Delay};
 
 mod metal_detector;
-use metal_detector::*;
+use crate::metal_detector::{
+    DisplayController, InductorController, Measurement, MeasurementData, MeasurementTaker,
+    ModulatedOutput,
+};
+use cortex_m_rt::entry;
+use stm32f1xx_hal::{adc::Adc, delay::Delay, pac, prelude::*};
 
 #[entry]
 

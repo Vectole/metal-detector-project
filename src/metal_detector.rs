@@ -1,5 +1,9 @@
-use embedded_hal::{digital::v2::OutputPin, PwmPin, adc::{OneShot, Channel}};
-use stm32f1xx_hal::{prelude::*, delay::Delay};
+use embedded_hal::{
+    adc::{Channel, OneShot},
+    digital::v2::OutputPin,
+    PwmPin,
+};
+use stm32f1xx_hal::{delay::Delay, prelude::*};
 use void::Void;
 
 /// Contains a PWM pin and the maximum allowed duty cycle.
@@ -79,7 +83,9 @@ where
     /// Reads the adc pin value after given time in microseconds (μs).
     pub fn read_after_waiting(&mut self, delay_provider: &mut Delay, wait_time: u16) {
         delay_provider.delay_us(wait_time);
-        self.output.data.update(self.adc.read(&mut self.pin).unwrap());
+        self.output
+            .data
+            .update(self.adc.read(&mut self.pin).unwrap());
     }
 }
 
