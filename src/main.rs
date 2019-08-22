@@ -90,7 +90,18 @@ fn main() -> ! {
         current_display: 0,
         current_tick: 0,
         current_number: 0,
-        digit_bytes: &DIGIT_BYTES,
+        digit_bytes: [
+            0b10111110, //0
+            0b10000010, //1
+            0b11101100, //2
+            0b11100110, //3
+            0b11010010, //4
+            0b01110110, //5
+            0b01111110, //6
+            0b10100010, //7
+            0b11111110, //8
+            0b11110110, //9
+        ],
     };
     display_controller.set_enabled(true);
 
@@ -182,19 +193,6 @@ impl MeasurementTaker<'_> {
     }
 }
 
-const DIGIT_BYTES: [u8; 10] = [
-    0b10111110, //0
-    0b10000010, //1
-    0b11101100, //2
-    0b11100110, //3
-    0b11010010, //4
-    0b01110110, //5
-    0b01111110, //6
-    0b10100010, //7
-    0b11111110, //8
-    0b11110110, //9
-];
-
 struct DisplayController<'a> {
     eight_segment_display_pin1: &'a mut dyn OutputPin<Error = Void>,
     eight_segment_display_pin2: &'a mut dyn OutputPin<Error = Void>,
@@ -207,7 +205,7 @@ struct DisplayController<'a> {
     current_display: u8,
     current_tick: u8,
     current_number: u16,
-    digit_bytes: &'static [u8; 10],
+    digit_bytes: [u8; 10],
 }
 
 impl DisplayController<'_> {
