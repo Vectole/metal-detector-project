@@ -7,7 +7,7 @@
 extern crate panic_halt;
 #[macro_use()]
 use cortex_m_rt::entry;
-use embedded_hal::{digital::v2::OutputPin, PwmPin};
+use embedded_hal::{digital::v2::OutputPin, PwmPin, adc::{OneShot, Channel}};
 #[macro_use(stm32f1xx_hal::gpio)]
 use stm32f1xx_hal::{adc::Adc, pac, prelude::*, delay::Delay};
 use void::Void;
@@ -29,7 +29,7 @@ fn main() -> ! {
 
     let mut measurement_taker = MeasurementTaker {
         adc: &mut Adc::adc1(device_peripherals.ADC1, &mut rcc.apb2, clocks),
-        pin: &mut gpioa.pa5.into_analog(&mut gpioa.crl),
+        pin: gpioa.pa5.into_analog(&mut gpioa.crl),
         output: Measurement {
             data: MeasurementData {
                 samples: [0; 15],
@@ -177,18 +177,23 @@ struct Measurement {
 }
 
 /// Controls the measurement taking ADC pin.
-struct MeasurementTaker<'a> {
-    adc: &'a mut Adc<pac::ADC1>,
-    // TODO: find a way to make this more generic:
-    pin: &'a mut stm32f1xx_hal::gpio::gpioa::PA5<stm32f1xx_hal::gpio::Analog>,
+struct MeasurementTaker<'a, ADC, PIN>
+where
+    PIN: Channel<ADC, ID = u8>,
+{
+    adc: &'a mut dyn OneShot<ADC, u16, PIN, Error = ()>,
+    pin: PIN,
     output: Measurement,
 }
 
-impl MeasurementTaker<'_> {
+impl<'a, ADC, PIN> MeasurementTaker<'_, ADC, PIN>
+where
+    PIN: Channel<ADC, ID = u8>,
+{
     /// Reads the adc pin value after given time in microseconds (μs).
     fn read_after_waiting(&mut self, delay_provider: &mut Delay, wait_time: u16) {
         delay_provider.delay_us(wait_time);
-        self.output.data.update(self.adc.read(self.pin).unwrap());
+        self.output.data.update(self.adc.read(&mut self.pin).unwrap());
     }
 }
 
