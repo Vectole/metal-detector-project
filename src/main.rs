@@ -21,12 +21,13 @@ fn main() -> ! {
     let mut rcc = device_peripherals.RCC.constrain(); // reset & clock control
 
     let mut afio = device_peripherals.AFIO.constrain(&mut rcc.apb2);
-    let clocks = rcc.cfgr.freeze(&mut flash.acr);
+    let clocks = rcc.cfgr.adcclk(2.mhz()).freeze(&mut flash.acr);
     let mut delay_provider = Delay::new(core_peripherals.SYST, clocks);
 
     let mut gpioa = device_peripherals.GPIOA.split(&mut rcc.apb2);
     let mut gpiob = device_peripherals.GPIOB.split(&mut rcc.apb2);
 
+    
     let mut measurement_taker = MeasurementTaker {
         adc: &mut Adc::adc1(device_peripherals.ADC1, &mut rcc.apb2, clocks),
         pin: &mut gpioa.pa5.into_analog(&mut gpioa.crl),
@@ -173,9 +174,6 @@ struct MeasurementTaker<'a> {
 impl MeasurementTaker<'_> {
     fn read_after_waiting(&mut self, delay_provider: &mut Delay, wait_time: u16) {
         delay_provider.delay_us(wait_time);
-        // TODO: why is adc.read() inconsistent?
-        // note: scope readings check out, noise same as with Arduino. 
-        // Compare how Arduino analogRead() and stm32f1xx_hal adc.read() function internally.
         self.output.data.update(self.adc.read(self.pin).unwrap());
     }
 }
