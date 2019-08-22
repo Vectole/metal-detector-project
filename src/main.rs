@@ -26,15 +26,14 @@ fn main() -> ! {
 
     let mut gpioa = device_peripherals.GPIOA.split(&mut rcc.apb2);
     let mut gpiob = device_peripherals.GPIOB.split(&mut rcc.apb2);
-    //let mut gpioc = device_peripherals.GPIOC.split(&mut rcc.apb2);
 
     let mut measurement_taker = MeasurementTaker {
         adc: &mut Adc::adc1(device_peripherals.ADC1, &mut rcc.apb2, clocks),
         pin: &mut gpioa.pa5.into_analog(&mut gpioa.crl),
         output: Measurement{
             data: MeasurementData {
-                values: [0; 10],
-                maximum: 0,
+                values: [0; 15],
+                value: 0,
                 current_index: 0,
             },
             range_min: 2036-100,
@@ -118,14 +117,6 @@ fn main() -> ! {
     }
 }
 
-// fn set_pwm<T: ?Sized>(pin: &mut T, duty: u16, starting_point: u16)
-// where
-//     T: PwmPin<Duty = u16>,
-// {
-//     let fill = map(duty, 0, 4095, 0, starting_point, true);
-//     pin.set_duty(fill);
-// }
-
 struct ModulatedOutput<'a> {
     pin: &'a mut dyn PwmPin<Duty = u16>,
     max_value: u16,
@@ -133,8 +124,7 @@ struct ModulatedOutput<'a> {
 
 impl ModulatedOutput<'_> {
     fn pulse(&mut self, measurement: &Measurement) {
-        //set_pwm(self.pin, duty, self.minimum_value);
-        self.pin.set_duty(map(measurement.data.maximum, measurement.range_min, measurement.range_max, 0, self.max_value, false));
+        self.pin.set_duty(map(measurement.data.value, measurement.range_min, measurement.range_max, 0, self.max_value, false));
     }
 }
 
@@ -151,20 +141,16 @@ impl InductorController<'_> {
 }
 
 struct MeasurementData {
-    values: [u16; 10],
-    maximum: u16,
+    values: [u16; 15],
+    value: u16,
     current_index: usize,
 }
 
 impl MeasurementData {
-    fn update(&mut self, value: u16) {
-        self.values[self.current_index] = value;
-        self.maximum = 0;
-        for i in 0..self.values.len() {
-            if self.values[i] > self.maximum {
-                self.maximum = self.values[i];
-            }
-        }
+    fn update(&mut self, input: u16) {
+        self.values[self.current_index] = input;
+        self.value = self.values.iter().sum::<u16>() / self.values.len() as u16;
+        
         self.current_index += 1;
         if self.current_index == self.values.len() {
             self.current_index = 0;
@@ -222,7 +208,7 @@ impl DisplayController<'_> {
     }
     fn display_data(&mut self, measurement: &Measurement) {
         if self.current_tick == 0 {
-            self.current_number = map(measurement.data.maximum, measurement.range_min, measurement.range_max, 0, 999, false);
+            self.current_number = map(measurement.data.value, measurement.range_min, measurement.range_max, 0, 999, false);
             self.current_tick = 25;
         } else {
             self.current_tick -= 1;
