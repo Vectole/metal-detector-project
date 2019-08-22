@@ -9,9 +9,7 @@ opt-level = 'z'
 lto = true
 debug = true
 features = "no_std"
-# panic = "abort"
 
-# [dependencies]
 [dependencies.stm32f1xx-hal]
 version = "0.4"
 features = ["stm32f103", "rt"]
@@ -26,7 +24,7 @@ version = "0.1.2"
 version = "0.6.10"
 
 [dependencies.cortex-m]
-version = "0.6.0"
+version = "0.6.1"
 
 [dependencies.embedded-hal]
 version = "0.2.3"
