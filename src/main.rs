@@ -27,11 +27,10 @@ fn main() -> ! {
     let mut gpioa = device_peripherals.GPIOA.split(&mut rcc.apb2);
     let mut gpiob = device_peripherals.GPIOB.split(&mut rcc.apb2);
 
-    
     let mut measurement_taker = MeasurementTaker {
         adc: &mut Adc::adc1(device_peripherals.ADC1, &mut rcc.apb2, clocks),
         pin: &mut gpioa.pa5.into_analog(&mut gpioa.crl),
-        output: Measurement{
+        output: Measurement {
             data: MeasurementData {
                 values: [0; 15],
                 value: 0,
@@ -112,11 +111,12 @@ fn main() -> ! {
         voltmeter_controller.pulse(&measurement_taker.output);
         speaker_controller.pulse(&measurement_taker.output);
         display_controller.display_data(&measurement_taker.output);
-        
+
         delay_provider.delay_us(6666 as u32);
     }
 }
 
+/// Contains a PWM pin and the maximum allowed duty cycle.
 struct ModulatedOutput<'a> {
     pin: &'a mut dyn PwmPin<Duty = u16>,
     max_value: u16,
@@ -124,15 +124,24 @@ struct ModulatedOutput<'a> {
 
 impl ModulatedOutput<'_> {
     fn pulse(&mut self, measurement: &Measurement) {
-        self.pin.set_duty(map(measurement.data.value, measurement.range_min, measurement.range_max, 0, self.max_value, false));
+        self.pin.set_duty(map(
+            measurement.data.value,
+            measurement.range_min,
+            measurement.range_max,
+            0,
+            self.max_value,
+            false,
+        ));
     }
 }
 
+/// Controls the inductor.
 struct InductorController<'a> {
     pin: &'a mut dyn OutputPin<Error = Void>,
 }
 
 impl InductorController<'_> {
+    /// Pulses the inductor for given time in microseconds (μs).
     fn pulse_for(&mut self, delay_provider: &mut Delay, pulse_width: u16) {
         self.pin.set_high();
         delay_provider.delay_us(pulse_width);
@@ -140,6 +149,7 @@ impl InductorController<'_> {
     }
 }
 
+/// Contains the measurement samples and the calculated output value (average) of the sampels.
 struct MeasurementData {
     values: [u16; 15],
     value: u16,
@@ -147,10 +157,11 @@ struct MeasurementData {
 }
 
 impl MeasurementData {
+    /// Reads and adds a sample to internal array, calculates average value.
     fn update(&mut self, input: u16) {
         self.values[self.current_index] = input;
         self.value = self.values.iter().sum::<u16>() / self.values.len() as u16;
-        
+
         self.current_index += 1;
         if self.current_index == self.values.len() {
             self.current_index = 0;
@@ -158,12 +169,14 @@ impl MeasurementData {
     }
 }
 
+/// Contains the measurement and its range.
 struct Measurement {
     data: MeasurementData,
     range_min: u16,
     range_max: u16,
 }
 
+/// Controls the measurement taking ADC pin.
 struct MeasurementTaker<'a> {
     adc: &'a mut Adc<pac::ADC1>,
     // TODO: find a way to make this more generic:
@@ -172,12 +185,14 @@ struct MeasurementTaker<'a> {
 }
 
 impl MeasurementTaker<'_> {
+    /// Reads the adc pin value after given time in microseconds (μs).
     fn read_after_waiting(&mut self, delay_provider: &mut Delay, wait_time: u16) {
         delay_provider.delay_us(wait_time);
         self.output.data.update(self.adc.read(self.pin).unwrap());
     }
 }
 
+/// Controls the 3-digit 7(8) - segment display using the HC595 chip.
 struct DisplayController<'a> {
     eight_segment_display_pin1: &'a mut dyn OutputPin<Error = Void>,
     eight_segment_display_pin2: &'a mut dyn OutputPin<Error = Void>,
@@ -194,8 +209,9 @@ struct DisplayController<'a> {
 }
 
 impl DisplayController<'_> {
+    /// Controls the ŌĒ pin of the chip, clears the storage register on enable.
     fn set_enabled(&mut self, enable: bool) {
-        // Active LOW (ŌĒ)
+        // Active LOW
         if enable {
             self.shift_register_enable_pin.set_low();
             self.shift_register_clear_pin.set_low();
@@ -205,9 +221,18 @@ impl DisplayController<'_> {
             self.shift_register_enable_pin.set_high();
         }
     }
+
+    /// Displays the input measurement as a 3 digit number.
     fn display_data(&mut self, measurement: &Measurement) {
         if self.current_tick == 0 {
-            self.current_number = map(measurement.data.value, measurement.range_min, measurement.range_max, 0, 999, false);
+            self.current_number = map(
+                measurement.data.value,
+                measurement.range_min,
+                measurement.range_max,
+                0,
+                999,
+                false,
+            );
             self.current_tick = 25;
         } else {
             self.current_tick -= 1;
@@ -257,6 +282,7 @@ enum WriteState {
     Numeric(u8),
 }
 
+/// Writes LOW, HIGH or the least significant bit of the input to the output pin.
 fn digital_write<T: ?Sized>(output_pin: &mut T, state: WriteState)
 where
     T: OutputPin<Error = Void>,
@@ -278,6 +304,9 @@ where
     }
 }
 
+/// Maps the input value from a given range to a new output range.
+///
+/// Output can be reversed to map from max to min.
 fn map(
     value: u16,
     input_range_min: u16,
