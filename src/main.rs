@@ -36,8 +36,8 @@ fn main() -> ! {
                 value: 0,
                 current_index: 0,
             },
-            range_min: 2036-100,
-            range_max: 2654-300,
+            range_min: 2040,
+            range_max: 2460,
         },
     };
 
@@ -57,20 +57,19 @@ fn main() -> ! {
     pwm_channel3.enable();
     pwm_channel4.enable();
 
-    // TODO: find the values for the outputs
     let mut bar_graph_controller = ModulatedOutput {
+        max_value: pwm_channel1.get_max_duty() / 3,
         pin: &mut pwm_channel1,
-        max_value: 90*16,
     };
 
     let mut voltmeter_controller = ModulatedOutput {
+        max_value: pwm_channel3.get_max_duty(),
         pin: &mut pwm_channel3,
-        max_value: 4095,
     };
 
     let mut speaker_controller = ModulatedOutput {
+        max_value: pwm_channel4.get_max_duty() / 5,
         pin: &mut pwm_channel4,
-        max_value: 50*16,
     };
 
     let mut inductor_controller = InductorController {
@@ -174,7 +173,9 @@ struct MeasurementTaker<'a> {
 impl MeasurementTaker<'_> {
     fn read_after_waiting(&mut self, delay_provider: &mut Delay, wait_time: u16) {
         delay_provider.delay_us(wait_time);
-        //output = map(output, 2036, 2654, 0, 4095, false);
+        // TODO: why is adc.read() inconsistent?
+        // note: scope readings check out, noise same as with Arduino. 
+        // Compare how Arduino analogRead() and stm32f1xx_hal adc.read() function internally.
         self.output.data.update(self.adc.read(self.pin).unwrap());
     }
 }
