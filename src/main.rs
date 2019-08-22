@@ -31,7 +31,15 @@ fn main() -> ! {
     let mut measurement_taker = MeasurementTaker {
         adc: &mut Adc::adc1(device_peripherals.ADC1, &mut rcc.apb2, clocks),
         pin: &mut gpioa.pa5.into_analog(&mut gpioa.crl),
-        output: 0,
+        output: Measurement{
+            data: MeasurementData {
+                values: [0; 10],
+                maximum: 0,
+                current_index: 0,
+            },
+            range_min: 2036-100,
+            range_max: 2654-300,
+        },
     };
 
     let pwm_pins_1 = (
@@ -53,17 +61,17 @@ fn main() -> ! {
     // TODO: find the values for the outputs
     let mut bar_graph_controller = ModulatedOutput {
         pin: &mut pwm_channel1,
-        minimum_value: 1500,
+        max_value: 90*16,
     };
 
     let mut voltmeter_controller = ModulatedOutput {
         pin: &mut pwm_channel3,
-        minimum_value: 3000,
+        max_value: 4095,
     };
 
     let mut speaker_controller = ModulatedOutput {
         pin: &mut pwm_channel4,
-        minimum_value: 160,
+        max_value: 50*16,
     };
 
     let mut inductor_controller = InductorController {
@@ -90,30 +98,32 @@ fn main() -> ! {
         inductor_controller.pulse_for(&mut delay_provider, 700);
         measurement_taker.read_after_waiting(&mut delay_provider, 40);
 
-        voltmeter_controller.pulse(measurement_taker.output);
-        display_controller.display_number(measurement_taker.output);
-        speaker_controller.pulse(measurement_taker.output);
-        bar_graph_controller.pulse(measurement_taker.output);
+        bar_graph_controller.pulse(&measurement_taker.output);
+        voltmeter_controller.pulse(&measurement_taker.output);
+        speaker_controller.pulse(&measurement_taker.output);
+        display_controller.display_data(&measurement_taker.output);
+        
         delay_provider.delay_us(6666 as u32);
     }
 }
 
-fn set_pwm<T: ?Sized>(pin: &mut T, duty: u16, starting_point: u16)
-where
-    T: PwmPin<Duty = u16>,
-{
-    let fill = map(duty, 0, 4095, 0, starting_point, false);
-    pin.set_duty(fill);
-}
+// fn set_pwm<T: ?Sized>(pin: &mut T, duty: u16, starting_point: u16)
+// where
+//     T: PwmPin<Duty = u16>,
+// {
+//     let fill = map(duty, 0, 4095, 0, starting_point, true);
+//     pin.set_duty(fill);
+// }
 
 struct ModulatedOutput<'a> {
     pin: &'a mut dyn PwmPin<Duty = u16>,
-    minimum_value: u16,
+    max_value: u16,
 }
 
 impl ModulatedOutput<'_> {
-    fn pulse(&mut self, duty: u16) {
-        set_pwm(self.pin, duty, self.minimum_value);
+    fn pulse(&mut self, measurement: &Measurement) {
+        //set_pwm(self.pin, duty, self.minimum_value);
+        self.pin.set_duty(map(measurement.data.maximum, measurement.range_min, measurement.range_max, 0, self.max_value, false));
     }
 }
 
@@ -129,19 +139,46 @@ impl InductorController<'_> {
     }
 }
 
+struct MeasurementData {
+    values: [u16; 10],
+    maximum: u16,
+    current_index: usize,
+}
+
+impl MeasurementData {
+    fn update(&mut self, value: u16) {
+        self.values[self.current_index] = value;
+        self.maximum = 0;
+        for i in 0..self.values.len() {
+            if self.values[i] > self.maximum {
+                self.maximum = self.values[i];
+            }
+        }
+        self.current_index += 1;
+        if self.current_index == self.values.len() {
+            self.current_index = 0;
+        }
+    }
+}
+
+struct Measurement {
+    data: MeasurementData,
+    range_min: u16,
+    range_max: u16,
+}
+
 struct MeasurementTaker<'a> {
     adc: &'a mut Adc<pac::ADC1>,
     // TODO: find a way to make this more generic:
     pin: &'a mut stm32f1xx_hal::gpio::gpioa::PA5<stm32f1xx_hal::gpio::Analog>,
-    output: u16,
+    output: Measurement,
 }
 
 impl MeasurementTaker<'_> {
     fn read_after_waiting(&mut self, delay_provider: &mut Delay, wait_time: u16) {
         delay_provider.delay_us(wait_time);
-        let mut output: u16 = self.adc.read(self.pin).unwrap();
-        output = map(output, 2036, 2654, 0, 4095, false);
-        self.output = output;
+        //output = map(output, 2036, 2654, 0, 4095, false);
+        self.output.data.update(self.adc.read(self.pin).unwrap());
     }
 }
 
@@ -185,10 +222,10 @@ impl DisplayController<'_> {
             self.shift_register_enable_pin.set_high();
         }
     }
-    fn display_number(&mut self, input_value: u16) {
+    fn display_data(&mut self, measurement: &Measurement) {
         if self.current_tick == 0 {
-            self.current_number = map(input_value, 0, 4095, 0, 999, false);
-            self.current_tick = 50;
+            self.current_number = map(measurement.data.maximum, measurement.range_min, measurement.range_max, 0, 999, false);
+            self.current_tick = 25;
         } else {
             self.current_tick -= 1;
         }
