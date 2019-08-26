@@ -5,10 +5,12 @@ authors = ["Vectole <vectole@protonmail.com>"]
 edition = "2018"
 
 [profile.release]
-opt-level = 'z'
+# opt-level = 'z'
+opt-level = 3
 lto = true
 debug = true
-features = "no_std"
+panic = 'abort'
+codegen-units = 1
 
 [dependencies.stm32f1xx-hal]
 version = "0.4"
